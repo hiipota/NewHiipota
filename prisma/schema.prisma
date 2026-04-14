@@ -1,0 +1,218 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Tenant {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  logoUrl         String?
+  settingsJson    String   @default("{}")
+  licenseStart    DateTime?
+  licenseEnd      DateTime?
+  maxEmployees    Int      @default(50)
+  activeModules   String   @default("[]") // JSON string array
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users                 User[]
+  employees             Employee[]
+  assets                Asset[]
+  announcements         Announcement[]
+  customFieldDefs       CustomFieldDefinition[]
+  performanceReviews    PerformanceReview[]
+  expenses              Expense[]
+}
+
+model User {
+  id                  String   @id @default(cuid())
+  tenantId            String?
+  email               String   @unique
+  passwordHash        String
+  role                String   @default("EMPLOYEE") // SUPER_ADMIN, COMPANY_ADMIN, HR_ADMIN, EMPLOYEE
+  passwordVerifiedAt  DateTime?
+  failedLoginAttempts Int      @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant?   @relation(fields: [tenantId], references: [id])
+}
+
+model Employee {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  firstName           String
+  lastName            String
+  email               String   @unique
+  phone               String?
+  nationalId          String?
+  department          String?
+  title               String?
+  employmentStatus    String   @default("ACTIVE") // ACTIVE, PASSIVE
+  photoUrl            String?
+  firstManagerId      String?
+  reportingManagerId  String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant    @relation(fields: [tenantId], references: [id])
+  
+  firstManager        Employee? @relation("FirstManager", fields: [firstManagerId], references: [id])
+  subordinates1       Employee[] @relation("FirstManager")
+  
+  reportingManager    Employee?  @relation("ReportingManager", fields: [reportingManagerId], references: [id])
+  subordinates2       Employee[] @relation("ReportingManager")
+
+  customFieldValues     CustomFieldValue[]
+  userConsents          UserConsent[]
+  assets                Asset[]
+  reviewsAsEmployee     PerformanceReview[] @relation("ReviewSubject")
+  reviewsAsReviewer     PerformanceReview[] @relation("ReviewReviewer")
+  expenses              Expense[]
+}
+
+model CustomFieldDefinition {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  type        String   @default("TEXT") // TEXT, NUMBER, DATE
+  isRequired  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  values      CustomFieldValue[]
+}
+
+model CustomFieldValue {
+  id              String   @id @default(cuid())
+  employeeId      String
+  definitionId    String
+  value           String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  employee        Employee              @relation(fields: [employeeId], references: [id])
+  definition      CustomFieldDefinition @relation(fields: [definitionId], references: [id])
+}
+
+model ConsentDocument {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  version     String
+  isRequired  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userConsents UserConsent[]
+}
+
+model UserConsent {
+  id                  String   @id @default(cuid())
+  employeeId          String
+  consentDocumentId   String
+  isAccepted          Boolean  @default(false)
+  acceptedAt          DateTime?
+  ipAddress           String?
+
+  employee            Employee        @relation(fields: [employeeId], references: [id])
+  consentDocument     ConsentDocument @relation(fields: [consentDocumentId], references: [id])
+}
+
+model Asset {
+  id            String   @id @default(cuid())
+  tenantId      String
+  employeeId    String?
+  name          String
+  category      String
+  serialNumber  String?
+  status        String   @default("AVAILABLE") // AVAILABLE, IN_USE, MAINTENANCE, RETIRED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  employee      Employee? @relation(fields: [employeeId], references: [id])
+}
+
+model Announcement {
+  id              String   @id @default(cuid())
+  tenantId        String
+  number          String?  
+  title           String
+  content         String
+  priority        String   @default("NORMAL")
+  status          String   @default("DRAFT")
+  version         Int      @default(1)
+  targetType      String   @default("ALL")
+  targetIds       String?  
+  videoUrl        String?
+  attachmentUrl   String?
+  authorId        String?
+  departmentId    String?
+  aiRiskScore     String?  
+  approveStatus   String   @default("APPROVED")
+  isDeleted       Boolean  @default(false)
+  publishDate     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  logs            AnnouncementLog[]
+}
+
+model AnnouncementLog {
+  id              String   @id @default(cuid())
+  announcementId  String
+  userId          String
+  openedAt        DateTime @default(now())
+  readAt          DateTime?
+  durationSeconds Int      @default(0)
+  versionRead     Int      @default(1)
+  createdAt       DateTime @default(now())
+
+  announcement    Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+}
+
+model PerformanceReview {
+  id          String   @id @default(cuid())
+  tenantId    String
+  employeeId  String
+  reviewerId  String
+  period      String
+  score       Int?
+  status      String   @default("DRAFT") // DRAFT, SUBMITTED, APPROVED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  employee    Employee @relation("ReviewSubject", fields: [employeeId], references: [id])
+  reviewer    Employee @relation("ReviewReviewer", fields: [reviewerId], references: [id])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  tenantId    String
+  employeeId  String
+  title       String
+  amount      Float
+  currency    String   @default("TRY")
+  category    String
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  receiptUrl  String?
+  rejectionReason String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  employee    Employee @relation(fields: [employeeId], references: [id])
+}
